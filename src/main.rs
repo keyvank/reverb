@@ -2,6 +2,15 @@ use std::{i16, path::Path};
 
 const SAMPLE_RATE: usize = 44100;
 
+fn norm(inp: &[f64]) -> Vec<f64> {
+    let mx = inp.iter().map(|a| a.abs()).fold(0f64, |a, b| a.max(b));
+    if mx != 0f64 {
+        gain(inp, 1f64 / mx)
+    } else {
+        inp.to_vec()
+    }
+}
+
 fn gain(inp: &[f64], gain: f64) -> Vec<f64> {
     inp.into_iter().map(|f| f * gain).collect()
 }
@@ -24,15 +33,13 @@ fn combine(inps: &[Vec<f64>]) -> Vec<f64> {
     ret
 }
 
-fn reverb(inp: &[f64]) -> Vec<f64> {
-    let mut delays = vec![];
-    let mut atten = 0.1f64;
-    for i in 0..10 {
-        let delayed = delay(&gain(&inp, atten), i as f64 / 5f64);
-        atten *= 0.8f64;
-        delays.push(delayed);
+fn feedback_delay_loop(inp: &[f64], del: f64, att: f64, cnt: usize) -> Vec<f64> {
+    let mut curr = inp.to_vec();
+    for _ in 0..cnt {
+        let delayed = delay(&gain(&curr, att), del);
+        curr = combine(&[curr, delayed]);
     }
-    combine(&delays)
+    curr
 }
 
 fn read_samples<P: AsRef<Path>>(path: P) -> Result<Vec<f64>, std::io::Error> {
@@ -55,7 +62,7 @@ fn write_samples<P: AsRef<Path>>(path: P, samples: &[f64]) -> Result<(), std::io
 
 fn main() -> Result<(), std::io::Error> {
     let samples = read_samples("tuyo.wav")?;
-    let reverbed = reverb(&samples);
+    let reverbed = norm(&feedback_delay_loop(&samples, 0.5, 0.3, 10));
     write_samples("out.wav", &reverbed)?;
     Ok(())
 }
